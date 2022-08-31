@@ -1,127 +1,148 @@
-# KafkaProducerLambda
+**_Lambda:_**
+KafkaProducerLambda is a java based Lambda triggered by an APIGateway using a POST request such as 
+https://oca2gcluz9.execute-api.eu-west-2.amazonaws.com/Prod/send. At the moment there is no expected request body.
 
-This project contains source code and supporting files for a serverless application that you can deploy with the SAM CLI. It includes the following files and folders.
 
-- HelloWorldFunction/src/main - Code for the application's Lambda function.
-- events - Invocation events that you can use to invoke the function.
-- HelloWorldFunction/src/test - Unit tests for the application code. 
-- template.yaml - A template that defines the application's AWS resources.
+KafkaProducerLambda calls KafkaProducerService to send messages to a Kafka topic
 
-The application uses several AWS resources, including Lambda functions and an API Gateway API. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
+KafkaProducerService instantiates KafkaProducer to send messages to kafka topic
+The APIGateway is configured inside the SAM yaml template in this project.
 
-If you prefer to use an integrated development environment (IDE) to build and test your application, you can use the AWS Toolkit.  
-The AWS Toolkit is an open source plug-in for popular IDEs that uses the SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds a simplified step-through debugging experience for Lambda function code. See the following links to get started.
+**_Configure/Create VPC and EC2 instances aws:_**
 
-* [CLion](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [GoLand](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [IntelliJ](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [WebStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [Rider](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PhpStorm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [PyCharm](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [RubyMine](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [DataGrip](https://docs.aws.amazon.com/toolkit-for-jetbrains/latest/userguide/welcome.html)
-* [VS Code](https://docs.aws.amazon.com/toolkit-for-vscode/latest/userguide/welcome.html)
-* [Visual Studio](https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/welcome.html)
+1. Create a VPC with two subnets.
+2. One subnet will be a private subnet and the other one a public.
+3. Route table of the private subnet within this VPS should point to a NAT gateway and also VPS endpoint
+    e.g.10.0.0.0/16	    local
+        0.0.0.0/0	    nat-0443622c668fd171d
+        pl-7ca54015	    vpce-0644710a43eb6a589
+4.VPC endpoint configuration:
+awskafka_vpc-rtb-private1-eu-west-2a	rtb-0778f82789db2d55c (awskafka_vpc-rtb-private1-eu-west-2a)	No	subnet-0762170e4a704613a (awskafka_vpc-subnet-private1-eu-west-2a)
 
-## Deploy the sample application
+5. NAT Gateway should point to the public subnet within this VPC
+6. Create one EC2 INSTANCE with the above VPC and the above mentioned private subnet. 
+    Kafka will be installed on this EC2 instance. So this will be the **kafka server**.
+7. Create one more EC2 INSTANCE with the above VPC and the above mentioned public subnet. 
+    This will act as your **bastion server**. You will ssh into this bastion server from your home computer.
+    From this you can ssh into the EC2 instance on private subnet.
+8. 
+8.  Access Kafka server via bastion server
+    1. On your home computer, on the terminal, type in
+    8.1 ssh-add <your aws ssh pem key> 
+    8.2 ssh-add -L to verify
+    8.3 ssh into aws bastion server: ssh -v -A ec2-user@<public ip of bastion server>
+    8.4 From your bastion server, do ssh -v ec2-user@<private ip of kafka server>
+    
+**_Install/Configure Apache Kafka/Zookeeper:_**
+   
+9. Install Java
+   sudo yum apt update
+   sudo amazon-linux-extras install java-openjdk11
+   Download and Extract Apache Kafka
+   wget https://archive.apache.org/dist/kafka/3.0.0/kafka_2.13-3.0.0.tgz
+   tar xzf kafka_2.13-3.0.0.tgz
+   mv kafka_2.13-3.0.0 /usr/local/kafka
+   Our next steps will be to create systemd unit files for the Zookeeper and Kafka. 
+   This will help us to manage Kafka/Zookeeper to run as services using the systemctl command.
+   
+   Setup Zookeeper Systemd Unit File. Run the command:
+   vim /etc/systemd/system/zookeeper.service
+   Paste below content:
+   
+   [Unit]
+   Description=Apache Zookeeper server
+   Documentation=http://zookeeper.apache.org
+   Requires=network.target remote-fs.target
+   After=network.target remote-fs.target
+   
+   [Service]
+   Type=simple
+   ExecStart=/usr/local/kafka/bin/zookeeper-server-start.sh /usr/local/kafka/config/zookeeper.properties
+   ExecStop=/usr/local/kafka/bin/zookeeper-server-stop.sh
+   Restart=on-abnormal
+   
+   [Install]
+   WantedBy=multi-user.target
+   Save and exit
+   
+   Setup Kafka Systemd Unit File. Run the command:
+   vim /etc/systemd/system/kafka.service
+   Paste below content:
+   
+   [Unit]
+   Description=Apache Kafka Server
+   Documentation=http://kafka.apache.org/documentation.html
+   Requires=zookeeper.service
+   
+   [Service]
+   Type=simple
+   Environment="JAVA_HOME=/usr/lib/jvm/java-11-openjdk-11.0.13.0.8-1.amzn2.0.3.x86_64/"
+   Environment="KAFKA_HEAP_OPTS=-Xmx256M -Xms256M"
+   ExecStart=/usr/local/kafka/bin/kafka-server-start.sh /usr/local/kafka/config/server.properties
+   ExecStop=/usr/local/kafka/bin/kafka-server-stop.sh
+   
+   [Install]
+   WantedBy=multi-user.target
+   Save and exit
+   
+   Note: The environment fields above will depend on your setup. For my case, 
+   I use a free-tier EC2 instance type thus limited memory which explains the value for KAFKA_HEAP_OPTS. 
+   Also, the JAVA_HOME value will depend on your JDK installation path. 
+   One can check this by running the command update-alternatives --config java.
+   
+   Reload the systemd daemon to apply new changes.
+   systemctl daemon-reload
+   Start Zookeeper Server
+   sudo systemctl start zookeeper
+   One can check the status if active by running below command:
+   
+   sudo systemctl status zookeeper
+   Start Kafka Server
+   sudo systemctl start kafka
+   One can check the status if active by running below command:
+   
+   sudo systemctl status kafka
+   Create a topic in Kafka. 
+   cd /usr/local/kafka/bin
+   ./kafka-topics.sh --create --bootstrap-server localhost:9092 --topic topic1 --replication-factor 1 --partitions 1
 
-The Serverless Application Model Command Line Interface (SAM CLI) is an extension of the AWS CLI that adds functionality for building and testing Lambda applications. It uses Docker to run your functions in an Amazon Linux environment that matches Lambda. It can also emulate your application's build environment and API.
+**_build and deploy lambda:_**  
+10. Update the SAM template yaml file in this project with your lambda name, package name etc and the value for 
+the environment variable KAFKA_BROKER_LIST. This should point to <your private IP of the Kafka server:9092>
 
-To use the SAM CLI, you need the following tools.
+11. Using the SAM template yaml file in this project build and deploy lambda to aws
 
-* SAM CLI - [Install the SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)
-* Java11 - [Install the Java 11](https://docs.aws.amazon.com/corretto/latest/corretto-11-ug/downloads-list.html)
-* Maven - [Install Maven](https://maven.apache.org/install.html)
-* Docker - [Install Docker community edition](https://hub.docker.com/search/?type=edition&offering=community)
+12. Now go to Permissions tab and click the role name to open the IAM console. 
+In addition to the existing AWSLambdaBasicExecutionRole policy, 
+add a new inline policy with a name SelfHostedKafkaPolicy with the following permissions:
+    {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "ec2:CreateNetworkInterface",
+                    "ec2:DescribeNetworkInterfaces",
+                    "ec2:DescribeVpcs",
+                    "ec2:DeleteNetworkInterface",
+                    "ec2:DescribeSubnets",
+                    "ec2:DescribeSecurityGroups",
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                ],
+                "Resource": "*"
+            }
+        ]
+    }
+    then save.
+    
+13. Go to VPC tab of your lambda and edit VPC details of lambda. Point to the above VPC and private subnet. 
+This will allow lambda to access the kafka server
 
-To build and deploy your application for the first time, run the following in your shell:
+14. Using APIGateway test your App!
 
-```bash
-sam build
-sam deploy --guided
-```
 
-The first command will build the source of your application. The second command will package and deploy your application to AWS, with a series of prompts:
 
-* **Stack Name**: The name of the stack to deploy to CloudFormation. This should be unique to your account and region, and a good starting point would be something matching your project name.
-* **AWS Region**: The AWS region you want to deploy your app to.
-* **Confirm changes before deploy**: If set to yes, any change sets will be shown to you before execution for manual review. If set to no, the AWS SAM CLI will automatically deploy application changes.
-* **Allow SAM CLI IAM role creation**: Many AWS SAM templates, including this example, create AWS IAM roles required for the AWS Lambda function(s) included to access AWS services. By default, these are scoped down to minimum required permissions. To deploy an AWS CloudFormation stack which creates or modifies IAM roles, the `CAPABILITY_IAM` value for `capabilities` must be provided. If permission isn't provided through this prompt, to deploy this example you must explicitly pass `--capabilities CAPABILITY_IAM` to the `sam deploy` command.
-* **Save arguments to samconfig.toml**: If set to yes, your choices will be saved to a configuration file inside the project, so that in the future you can just re-run `sam deploy` without parameters to deploy changes to your application.
 
-You can find your API Gateway Endpoint URL in the output values displayed after deployment.
 
-## Use the SAM CLI to build and test locally
-
-Build your application with the `sam build` command.
-
-```bash
-KafkaProducerLambda$ sam build
-```
-
-The SAM CLI installs dependencies defined in `HelloWorldFunction/pom.xml`, creates a deployment package, and saves it in the `.aws-sam/build` folder.
-
-Test a single function by invoking it directly with a test event. An event is a JSON document that represents the input that the function receives from the event source. Test events are included in the `events` folder in this project.
-
-Run functions locally and invoke them with the `sam local invoke` command.
-
-```bash
-KafkaProducerLambda$ sam local invoke HelloWorldFunction --event events/event.json
-```
-
-The SAM CLI can also emulate your application's API. Use the `sam local start-api` to run the API locally on port 3000.
-
-```bash
-KafkaProducerLambda$ sam local start-api
-KafkaProducerLambda$ curl http://localhost:3000/
-```
-
-The SAM CLI reads the application template to determine the API's routes and the functions that they invoke. The `Events` property on each function's definition includes the route and method for each path.
-
-```yaml
-      Events:
-        HelloWorld:
-          Type: Api
-          Properties:
-            Path: /hello
-            Method: get
-```
-
-## Add a resource to your application
-The application template uses AWS Serverless Application Model (AWS SAM) to define application resources. AWS SAM is an extension of AWS CloudFormation with a simpler syntax for configuring common serverless application resources such as functions, triggers, and APIs. For resources not included in [the SAM specification](https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md), you can use standard [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-template-resource-type-ref.html) resource types.
-
-## Fetch, tail, and filter Lambda function logs
-
-To simplify troubleshooting, SAM CLI has a command called `sam logs`. `sam logs` lets you fetch logs generated by your deployed Lambda function from the command line. In addition to printing the logs on the terminal, this command has several nifty features to help you quickly find the bug.
-
-`NOTE`: This command works for all AWS Lambda functions; not just the ones you deploy using SAM.
-
-```bash
-KafkaProducerLambda$ sam logs -n HelloWorldFunction --stack-name KafkaProducerLambda --tail
-```
-
-You can find more information and examples about filtering Lambda function logs in the [SAM CLI Documentation](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-logging.html).
-
-## Unit tests
-
-Tests are defined in the `HelloWorldFunction/src/test` folder in this project.
-
-```bash
-KafkaProducerLambda$ cd HelloWorldFunction
-HelloWorldFunction$ mvn test
-```
-
-## Cleanup
-
-To delete the sample application that you created, use the AWS CLI. Assuming you used your project name for the stack name, you can run the following:
-
-```bash
-aws cloudformation delete-stack --stack-name KafkaProducerLambda
-```
-
-## Resources
-
-See the [AWS SAM developer guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/what-is-sam.html) for an introduction to SAM specification, the SAM CLI, and serverless application concepts.
-
-Next, you can use AWS Serverless Application Repository to deploy ready to use Apps that go beyond hello world samples and learn how authors developed their applications: [AWS Serverless Application Repository main page](https://aws.amazon.com/serverless/serverlessrepo/)
