@@ -31,12 +31,16 @@ public class KafkaProducerLambdaTest {
 
     @SystemStub
     private EnvironmentVariables environmentVariables;
+
     @Mock
     private Context context;
+
     @Mock
     private KafkaProducerService service;
+
     @Mock
     private KafkaProducer producer;
+
     @Mock
     private Util util;
 
@@ -76,16 +80,16 @@ public class KafkaProducerLambdaTest {
 
     private LambdaLogger getLogger() {
         return new LambdaLogger() {
-                @Override
-                public void log(String s) {
+            @Override
+            public void log(String s) {
 
-                }
+            }
 
-                @Override
-                public void log(byte[] bytes) {
+            @Override
+            public void log(byte[] bytes) {
 
-                }
-            };
+            }
+        };
     }
 
 }
