@@ -61,7 +61,7 @@ public class KafkaProducerLambdaTest {
         when(util.createKafkaProducerService(any(LambdaLogger.class), anyString(), any(Map.class))).thenReturn(service);
         when(service.sendMessages()).thenReturn(apiGatewayProxyResponseEvent);
 
-
+        assertEquals("127.0.0.1:9092", System.getenv(KAFKA_BROKER_LIST));
         APIGatewayProxyResponseEvent result = kafkaProducerLambda.handleRequest(null, context);
 
 
@@ -70,7 +70,7 @@ public class KafkaProducerLambdaTest {
         String content = result.getBody();
         assertNotNull(content);
         assertTrue(content.contains("Messages sent to Kafka topic on 127.0.0.1:9092"));
-        assertEquals("127.0.0.1:9092", environmentVariables.getVariables().get(KAFKA_BROKER_LIST));
+
 
     }
 
