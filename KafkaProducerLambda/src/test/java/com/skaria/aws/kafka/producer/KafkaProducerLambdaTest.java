@@ -55,17 +55,7 @@ public class KafkaProducerLambdaTest {
         apiGatewayProxyResponseEvent.withStatusCode(200)
                 .withBody("Messages sent to Kafka topic on 127.0.0.1:9092");
 
-        LambdaLogger logger = new LambdaLogger() {
-            @Override
-            public void log(String s) {
-
-            }
-
-            @Override
-            public void log(byte[] bytes) {
-
-            }
-        };
+        LambdaLogger logger = getLogger();
 
         when(context.getLogger()).thenReturn(logger);
         when(util.createKafkaProducerService(any(LambdaLogger.class), anyString(), any(Map.class))).thenReturn(service);
@@ -82,6 +72,20 @@ public class KafkaProducerLambdaTest {
         assertTrue(content.contains("Messages sent to Kafka topic on 127.0.0.1:9092"));
         assertEquals("127.0.0.1:9092", environmentVariables.getVariables().get(KAFKA_BROKER_LIST));
 
+    }
+
+    private LambdaLogger getLogger() {
+        return new LambdaLogger() {
+                @Override
+                public void log(String s) {
+
+                }
+
+                @Override
+                public void log(byte[] bytes) {
+
+                }
+            };
     }
 
 }
